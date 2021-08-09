@@ -1,0 +1,15 @@
+
+#cv-template {
+
+    display: none;
+}
+.background{
+
+    background-color:yellowgreen;
+}
+.myimg{
+
+    border:1px solid rgb(19, 182, 47);
+    border-radius: 60%;
+    width: 200px;
+}
