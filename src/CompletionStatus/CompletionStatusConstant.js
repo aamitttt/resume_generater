@@ -1,0 +1,80 @@
+const URIS = {
+	GET_MODULE_COMPLETION_DETAILS: "/getModuleWiseCompletionDetails",
+	GET_COMPLETION_DETAILS_FOR_SPECIFIC_MODULE: "/getModuleCompletionDetails/:moduleId",
+	GET_TOPIC_PROGRESS_DETAILS: "/getTopicProgressDetails/:topicId",
+};
+Object.freeze(URIS);
+
+const CONTENT_TYPE = {
+	VIDEO: "video",
+	QUESTION: "question",
+};
+Object.freeze(CONTENT_TYPE);
+
+const FLAG_TYPE = {
+	MARKED_AS_DONE: 1,
+	MARKED_FOR_REVIEW: 2,
+	SAVED_FOR_LATER: 3,
+};
+Object.freeze(FLAG_TYPE);
+
+// required as we need to keep multiple queries union compatible
+const DEFAULT_DIFFICULTY_LEVEL_FOR_VIDEO = "Easy";
+const MODULE_ID = "module_id";
+const TOPIC_ID = "topic_id";
+const VIDEOS = "videos";
+const TOTAL_VIDEO_AND_QUESTION_COUNT = "total_video_and_question_count";
+const TOTAL_EASY_QUESTIONS = "total_easy_questions";
+const TOTAL_MEDIUM_QUESTIONS = "total_medium_questions";
+const TOTAL_HARD_QUESTIONS = "total_hard_questions";
+const COMPLETED_EASY_QUESTIONS = "completed_easy_questions";
+const COMPLETED_MEDIUM_QUESTIONS = "completed_medium_questions";
+const COMPLETED_HARD_QUESTIONS = "completed_hard_questions";
+const TOTAL_VIDEOS = "total_videos";
+const COMPLETED_VIDEOS = "completed_videos";
+const COMPLETED_QUESTIONS = "completed_questions";
+const TOTAL_ASSIGNMENT_QUESTIONS = "total_assignment_questions";
+const ASSIGNMENT_QUESTIONS = "assignment_questions";
+const HOMEWORK_QUESTIONS = "homework_questions";
+const TOTAL_HOMEWORK_QUESTIONS = "total_homework_questions";
+
+const DIFFICULTY_LEVELS = {
+	EASY: "Easy",
+	MEDIUM: "Medium",
+	HARD: "Hard",
+};
+Object.freeze(DIFFICULTY_LEVELS);
+
+const DIFFICULTY_LEVEL_AND_MODULEDETAILS_ATTRIBUTE_MAP = new Map();
+DIFFICULTY_LEVEL_AND_MODULEDETAILS_ATTRIBUTE_MAP.set(DIFFICULTY_LEVELS.EASY, TOTAL_EASY_QUESTIONS);
+DIFFICULTY_LEVEL_AND_MODULEDETAILS_ATTRIBUTE_MAP.set(
+	DIFFICULTY_LEVELS.MEDIUM,
+	TOTAL_MEDIUM_QUESTIONS
+);
+DIFFICULTY_LEVEL_AND_MODULEDETAILS_ATTRIBUTE_MAP.set(DIFFICULTY_LEVELS.HARD, TOTAL_HARD_QUESTIONS);
+
+module.exports = {
+	URIS,
+	CONTENT_TYPE,
+	FLAG_TYPE,
+	DEFAULT_DIFFICULTY_LEVEL_FOR_VIDEO,
+	DIFFICULTY_LEVELS,
+	MODULE_ID,
+	TOPIC_ID,
+	VIDEOS,
+	TOTAL_VIDEO_AND_QUESTION_COUNT,
+	TOTAL_EASY_QUESTIONS,
+	TOTAL_MEDIUM_QUESTIONS,
+	TOTAL_HARD_QUESTIONS,
+	COMPLETED_EASY_QUESTIONS,
+	COMPLETED_MEDIUM_QUESTIONS,
+	COMPLETED_HARD_QUESTIONS,
+	TOTAL_VIDEOS,
+	COMPLETED_VIDEOS,
+	COMPLETED_QUESTIONS,
+	TOTAL_ASSIGNMENT_QUESTIONS,
+	ASSIGNMENT_QUESTIONS,
+	TOTAL_HOMEWORK_QUESTIONS,
+	HOMEWORK_QUESTIONS,
+	DIFFICULTY_LEVEL_AND_MODULEDETAILS_ATTRIBUTE_MAP,
+};

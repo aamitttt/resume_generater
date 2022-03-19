@@ -1,0 +1,232 @@
+const models = require("../Models/Index");
+const { QueryTypes } = require("sequelize");
+const sequelizeInstance = models.sequelizeInstance;
+
+const {
+	CONTENT_TYPE,
+	FLAG_TYPE,
+	DEFAULT_DIFFICULTY_LEVEL_FOR_VIDEO,
+} = require("./CompletionStatusConstant");
+
+/**
+ * @author Namrata Pagare <namrata.pagare123@gmail.com>
+ * @param { number } topicId
+ * @param { string } email
+ * Extracts the details of particular topic for a user(Video, Homework and Assignment data)
+ */
+const getTopicProgressSummaryFromDB = async (topicId, email) => {
+	return await sequelizeInstance.query(
+		// First part gives details of video lectures of a particular user
+		// Second part gives details of Homework Question of a particular user
+		// Third part gives details of Assignment Question of a particular user
+		`((SELECT B.SUBTOPIC_ID AS RESOURCE_ID ,A.FLAG_ID,'Easy' AS LEVEL, 'VIDEO' AS RESOURCE_TYPE , B.SUBTOPIC_NAME AS NAME ,A.TOPIC_NAME,A.DATE, B.SUBTOPIC_AVAILABLE_FOR_FREE_TRIAL_USER
+        FROM (SELECT TOPICS.TOPIC_ID, SUBTOPICS.SUBTOPIC_ID ,  
+        FLAG_DETAILS.FLAG_ID, TOPICS.TOPIC_NAME,FLAG_DETAILS.DATE FROM TOPICS 
+        JOIN SUBTOPICS ON TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID 
+        JOIN FLAG_DETAILS ON SUBTOPICS.SUBTOPIC_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID 
+        WHERE TYPE='${CONTENT_TYPE.VIDEO}' AND EMAIL= $2 AND TOPICS.TOPIC_ID = $1  AND IS_PRESENT=TRUE ) AS A
+        RIGHT JOIN (SELECT * FROM SUBTOPICS WHERE TOPIC_ID = $1) AS B  ON A.SUBTOPIC_ID = B.SUBTOPIC_ID)
+        UNION ALL
+        (SELECT B.HOMEWORK_ID AS RESOURCE_ID, A.FLAG_ID,B.LEVEL,'HOMEWORK' AS RESOURCE_TYPE, B.NAME AS NAME, A.TOPIC_NAME,A.DATE,B.SUBTOPIC_AVAILABLE_FOR_FREE_TRIAL_USER  FROM (SELECT  HOMEWORK_QUESTION.HOMEWORK_ID,HOMEWORK_QUESTION.QUES_ID,
+                       FLAG_DETAILS.FLAG_ID, TOPICS.TOPIC_NAME,FLAG_DETAILS.DATE FROM TOPICS 
+                            JOIN SUBTOPICS ON TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+                            JOIN HOMEWORK_QUESTION ON SUBTOPICS.HOMEWORK_ID=HOMEWORK_QUESTION.HOMEWORK_ID
+                            JOIN QUESTIONS ON HOMEWORK_QUESTION.QUES_ID = QUESTIONS.QUES_ID
+                            JOIN FLAG_DETAILS ON HOMEWORK_QUESTION.QUES_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID 	 
+                            WHERE TYPE='${CONTENT_TYPE.QUESTION}' AND EMAIL= $2 AND TOPICS.TOPIC_ID =$1  AND IS_PRESENT=TRUE ) AS A 				
+        RIGHT JOIN (SELECT QUESTIONS.NAME,QUESTIONS.LEVEL,HOMEWORK_QUESTION.QUES_ID,HOMEWORK_QUESTION.HOMEWORK_ID,SUBTOPICS.SUBTOPIC_AVAILABLE_FOR_FREE_TRIAL_USER FROM SUBTOPICS 
+                    JOIN HOMEWORK_QUESTION ON SUBTOPICS.HOMEWORK_ID=HOMEWORK_QUESTION.HOMEWORK_ID 
+                    JOIN QUESTIONS ON HOMEWORK_QUESTION.QUES_ID = QUESTIONS.QUES_ID WHERE SUBTOPICS.TOPIC_ID = $1 )AS B ON A.QUES_ID = B.QUES_ID)
+        UNION ALL
+        (SELECT B.ASSIGNMENT_ID AS RESOURCE_ID, A.FLAG_ID,B.LEVEL,'ASSIGNMENT' AS RESOURCE_TYPE, B.NAME  AS NAME, A.TOPIC_NAME,A.DATE,B.SUBTOPIC_AVAILABLE_FOR_FREE_TRIAL_USER  FROM (SELECT  ASSIGNMENT_QUESTION.ASSIGNMENT_ID, ASSIGNMENT_QUESTION.QUES_ID,
+                       FLAG_DETAILS.FLAG_ID, QUESTIONS.LEVEL,  TOPICS.TOPIC_NAME,FLAG_DETAILS.DATE FROM TOPICS 
+                            JOIN SUBTOPICS ON TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+                            JOIN ASSIGNMENT_QUESTION ON SUBTOPICS.ASSIGNMENT_ID=ASSIGNMENT_QUESTION.ASSIGNMENT_ID
+                            JOIN QUESTIONS ON ASSIGNMENT_QUESTION.QUES_ID = QUESTIONS.QUES_ID
+                            JOIN FLAG_DETAILS ON ASSIGNMENT_QUESTION.QUES_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID 	 
+                            WHERE TYPE='${CONTENT_TYPE.QUESTION}' AND EMAIL= $2 AND TOPICS.TOPIC_ID =$1  AND IS_PRESENT=TRUE ) AS A 				
+        RIGHT JOIN (SELECT QUESTIONS.NAME,QUESTIONS.LEVEL,ASSIGNMENT_QUESTION.QUES_ID,ASSIGNMENT_QUESTION.ASSIGNMENT_ID,SUBTOPICS.SUBTOPIC_AVAILABLE_FOR_FREE_TRIAL_USER FROM SUBTOPICS 
+                    JOIN ASSIGNMENT_QUESTION ON SUBTOPICS.ASSIGNMENT_ID=ASSIGNMENT_QUESTION.ASSIGNMENT_ID 
+                    JOIN QUESTIONS ON ASSIGNMENT_QUESTION.QUES_ID = QUESTIONS.QUES_ID WHERE SUBTOPICS.TOPIC_ID = $1 )AS B ON A.QUES_ID = B.QUES_ID)
+                    ORDER BY DATE DESC)`,
+		{ bind: [topicId, email], type: QueryTypes.SELECT }
+	);
+};
+
+/**
+ * @author Lakshyajit Laxmikant <lakshyajit165@gmail.com>
+ * following query gives modulewise total video + question(assignment/homework) count
+ */
+const getModuleWiseContentCountFromDB = async () => {
+	try {
+		let moduleWiseContentCount = await sequelizeInstance.query(
+			`SELECT 
+        MT.MODULE_ID,
+        COUNT(DISTINCT ST.SUBTOPIC_ID) + 
+        COUNT(DISTINCT HQ.QUES_ID) +
+        COUNT(DISTINCT AQ.QUES_ID) AS TOTAL_VIDEO_AND_QUESTION_COUNT
+        FROM MODULE_TOPICS MT
+        INNER JOIN TOPICS T ON MT.TOPIC_ID = T.TOPIC_ID
+        INNER JOIN SUBTOPICS ST ON MT.TOPIC_ID = ST.TOPIC_ID
+        LEFT JOIN HOMEWORK_QUESTION HQ ON ST.HOMEWORK_ID = HQ.HOMEWORK_ID
+        LEFT JOIN ASSIGNMENT_QUESTION AQ ON ST.ASSIGNMENT_ID = AQ.ASSIGNMENT_ID
+        GROUP BY MT.MODULE_ID`,
+			{ type: QueryTypes.SELECT }
+		);
+		return moduleWiseContentCount;
+	} catch (err) {
+		throw err;
+	}
+};
+
+/**
+ * @author Lakshyajit Laxmikant <lakshyajit165@gmail.com>
+ * @param { string } email
+ * following query extracts(per module) - 1. All the videos watched, 2. All the assignments done, 3. All the homeworks done
+ * And finally takes union of all these results
+ */
+const getModuleWiseCompletionDetailsFromDB = async (email) => {
+	try {
+		/**
+		 *
+		 */
+		let moduleWiseCompletionDetails = await sequelizeInstance.query(
+			`(SELECT MODULE_TOPICS.MODULE_ID, SUBTOPICS.SUBTOPIC_ID AS SUBTOPICORQUESTIONID, FLAG_DETAILS.TYPE
+                FROM MODULE_TOPICS INNER JOIN SUBTOPICS ON MODULE_TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+                INNER JOIN FLAG_DETAILS ON SUBTOPICS.SUBTOPIC_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID WHERE TYPE='${CONTENT_TYPE.VIDEO}' AND FLAG_ID=${FLAG_TYPE.MARKED_AS_DONE} AND IS_PRESENT=TRUE AND EMAIL=$1
+                )
+                UNION ALL
+                (SELECT MODULE_TOPICS.MODULE_ID, ASSIGNMENT_QUESTION.QUES_ID AS SUBTOPICORQUESTIONID, FLAG_DETAILS.TYPE
+                FROM MODULE_TOPICS 
+                INNER JOIN SUBTOPICS ON MODULE_TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+                INNER JOIN ASSIGNMENT_QUESTION ON SUBTOPICS.ASSIGNMENT_ID=ASSIGNMENT_QUESTION.ASSIGNMENT_ID
+                INNER JOIN FLAG_DETAILS ON ASSIGNMENT_QUESTION.QUES_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID WHERE TYPE='${CONTENT_TYPE.QUESTION}' AND FLAG_ID=${FLAG_TYPE.MARKED_AS_DONE} AND IS_PRESENT=TRUE AND EMAIL=$1
+                )
+                UNION ALL
+                (SELECT MODULE_TOPICS.MODULE_ID, HOMEWORK_QUESTION.QUES_ID AS SUBTOPICORQUESTIONID, FLAG_DETAILS.TYPE
+                FROM MODULE_TOPICS 
+                INNER JOIN SUBTOPICS ON MODULE_TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+                INNER JOIN HOMEWORK_QUESTION ON SUBTOPICS.HOMEWORK_ID=HOMEWORK_QUESTION.HOMEWORK_ID
+                INNER JOIN FLAG_DETAILS ON HOMEWORK_QUESTION.QUES_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID WHERE TYPE='${CONTENT_TYPE.QUESTION}' AND FLAG_ID=${FLAG_TYPE.MARKED_AS_DONE} AND IS_PRESENT=TRUE AND EMAIL=$1
+                )`,
+			{ bind: [email], type: QueryTypes.SELECT }
+		);
+		return moduleWiseCompletionDetails;
+	} catch (err) {
+		throw err;
+	}
+};
+
+/**
+ * @author Lakshyajit Laxmikant <lakshyajit165@gmail.com>
+ * @param { string } email
+ * @param { number } moduleId
+ * following query extracts completed videos, completed
+ * assignments, completed homeworks and unions all these results
+ */
+const getModuleAndTopicCompletionDetailsFromDB = async (email, moduleId) => {
+	try {
+		let moduleAndTopicCompletionDetails = await sequelizeInstance.query(
+			`(SELECT MODULE_TOPICS.TOPIC_ID, SUBTOPICS.SUBTOPIC_ID AS SUBTOPICORQUESTIONID, FLAG_DETAILS.TYPE, 
+            FLAG_DETAILS.FLAG_ID, '${DEFAULT_DIFFICULTY_LEVEL_FOR_VIDEO}' AS LEVEL 
+            FROM MODULE_TOPICS INNER JOIN SUBTOPICS ON MODULE_TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+            INNER JOIN FLAG_DETAILS ON SUBTOPICS.SUBTOPIC_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID 
+            WHERE TYPE='${CONTENT_TYPE.VIDEO}'  AND FLAG_DETAILS.FLAG_ID=${FLAG_TYPE.MARKED_AS_DONE} AND IS_PRESENT=TRUE AND EMAIL=$1 AND MODULE_TOPICS.MODULE_ID=$2
+            )
+            UNION ALL
+            (SELECT MODULE_TOPICS.TOPIC_ID, ASSIGNMENT_QUESTION.QUES_ID AS SUBTOPICORQUESTIONID, FLAG_DETAILS.TYPE, 
+            FLAG_DETAILS.FLAG_ID, QUESTIONS.LEVEL
+            FROM MODULE_TOPICS 
+            INNER JOIN SUBTOPICS ON MODULE_TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+            INNER JOIN ASSIGNMENT_QUESTION ON SUBTOPICS.ASSIGNMENT_ID=ASSIGNMENT_QUESTION.ASSIGNMENT_ID
+            INNER JOIN QUESTIONS ON ASSIGNMENT_QUESTION.QUES_ID = QUESTIONS.QUES_ID
+            INNER JOIN FLAG_DETAILS ON ASSIGNMENT_QUESTION.QUES_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID 
+            WHERE TYPE='${CONTENT_TYPE.QUESTION}' AND FLAG_DETAILS.FLAG_ID=${FLAG_TYPE.MARKED_AS_DONE} AND IS_PRESENT=TRUE AND EMAIL=$1 AND MODULE_TOPICS.MODULE_ID=$2
+            )	
+            UNION ALL
+            (SELECT MODULE_TOPICS.TOPIC_ID, HOMEWORK_QUESTION.QUES_ID AS SUBTOPICORQUESTIONID, FLAG_DETAILS.TYPE, 
+            FLAG_DETAILS.FLAG_ID, QUESTIONS.LEVEL
+            FROM MODULE_TOPICS 
+            INNER JOIN SUBTOPICS ON MODULE_TOPICS.TOPIC_ID = SUBTOPICS.TOPIC_ID
+            INNER JOIN HOMEWORK_QUESTION ON SUBTOPICS.HOMEWORK_ID=HOMEWORK_QUESTION.HOMEWORK_ID
+            INNER JOIN QUESTIONS ON HOMEWORK_QUESTION.QUES_ID = QUESTIONS.QUES_ID
+            INNER JOIN FLAG_DETAILS ON HOMEWORK_QUESTION.QUES_ID = FLAG_DETAILS.SUBTOPICORQUESTIONID 
+            WHERE TYPE='${CONTENT_TYPE.QUESTION}' AND FLAG_DETAILS.FLAG_ID=${FLAG_TYPE.MARKED_AS_DONE} AND IS_PRESENT=TRUE AND EMAIL=$1 AND MODULE_TOPICS.MODULE_ID=$2)`,
+			{ bind: [email, moduleId], type: QueryTypes.SELECT }
+		);
+		return moduleAndTopicCompletionDetails;
+	} catch (err) {
+		throw err;
+	}
+};
+
+/**
+ * @author Lakshyajit Laxmikant <lakshyajit165@gmail.com>
+ * @param { number } moduleId
+ * following query extracts topicwise total content count for a specific module
+ */
+const getTopicwiseTotalContentFromDB = async (moduleId) => {
+	try {
+		let topicwiseTotalContent = await sequelizeInstance.query(
+			`SELECT 
+            MT.MODULE_ID, MT.TOPIC_ID,
+            COUNT(DISTINCT ST.SUBTOPIC_ID) AS VIDEOS, 
+            COUNT(DISTINCT HQ.QUES_ID) AS HOMEWORK_QUESTIONS,
+            COUNT(DISTINCT AQ.QUES_ID) AS ASSIGNMENT_QUESTIONS
+            FROM MODULE_TOPICS MT
+            INNER JOIN TOPICS T ON MT.TOPIC_ID = T.TOPIC_ID
+            INNER JOIN SUBTOPICS ST ON MT.TOPIC_ID = ST.TOPIC_ID
+            LEFT JOIN HOMEWORK_QUESTION HQ ON ST.HOMEWORK_ID = HQ.HOMEWORK_ID
+            LEFT JOIN ASSIGNMENT_QUESTION AQ ON ST.ASSIGNMENT_ID = AQ.ASSIGNMENT_ID
+            WHERE MT.MODULE_ID=$1
+            GROUP BY MT.MODULE_ID, MT.TOPIC_ID`,
+			{ bind: [moduleId], type: QueryTypes.SELECT }
+		);
+		return topicwiseTotalContent;
+	} catch (err) {
+		throw err;
+	}
+};
+
+/**
+ * @author Lakshyajit Laxmikant <lakshyajit165@gmail.com>
+ * @param { number } moduleId
+ * following query extracts topicwise assignment and homework questions along with their levels for
+ * a specific module
+ */
+const getTotalQuestionCountWithLevelsFromDB = async (moduleId) => {
+	try {
+		let totalQuestionCountWithLevels = await sequelizeInstance.query(
+			`SELECT 
+                MT.TOPIC_ID, HQ.HOMEWORK_ID AS HOMEWORK_OR_ASSIGNMENT_ID, JSON_AGG(Q.LEVEL) AS LEVELS, 'HOMEWORK' AS QUESTION_TYPE
+                FROM MODULE_TOPICS MT
+                INNER JOIN TOPICS T ON MT.TOPIC_ID = T.TOPIC_ID
+                INNER JOIN SUBTOPICS ST ON MT.TOPIC_ID = ST.TOPIC_ID
+                LEFT JOIN HOMEWORK_QUESTION HQ ON ST.HOMEWORK_ID = HQ.HOMEWORK_ID
+                INNER JOIN QUESTIONS Q ON HQ.QUES_ID=Q.QUES_ID WHERE MT.MODULE_ID=$1
+                GROUP BY MT.MODULE_ID, MT.TOPIC_ID, HQ.HOMEWORK_ID 
+            UNION ALL
+                SELECT 
+                MT.TOPIC_ID, AQ.ASSIGNMENT_ID AS HOMEWORK_OR_ASSIGNMENT_ID, JSON_AGG(Q.LEVEL) AS LEVELS, 'ASSIGNMENT' AS QUESTION_TYPE
+                FROM MODULE_TOPICS MT
+                INNER JOIN TOPICS T ON MT.TOPIC_ID = T.TOPIC_ID
+                INNER JOIN SUBTOPICS ST ON MT.TOPIC_ID = ST.TOPIC_ID
+                LEFT JOIN ASSIGNMENT_QUESTION AQ ON ST.ASSIGNMENT_ID = AQ.ASSIGNMENT_ID
+                INNER JOIN QUESTIONS Q ON AQ.QUES_ID=Q.QUES_ID WHERE MT.MODULE_ID=$1
+                GROUP BY MT.MODULE_ID, MT.TOPIC_ID, AQ.ASSIGNMENT_ID`,
+			{ bind: [moduleId], type: QueryTypes.SELECT }
+		);
+		return totalQuestionCountWithLevels;
+	} catch (err) {
+		throw err;
+	}
+};
+
+module.exports = {
+	getTopicProgressSummaryFromDB,
+	getModuleWiseContentCountFromDB,
+	getModuleWiseCompletionDetailsFromDB,
+	getModuleAndTopicCompletionDetailsFromDB,
+	getTopicwiseTotalContentFromDB,
+	getTotalQuestionCountWithLevelsFromDB,
+};
